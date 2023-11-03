@@ -32,7 +32,10 @@ class SongModel(GPT2PreTrainedModel):
         self.wpe = nn.Embedding(config.max_position_embeddings, self.embed_dim)
 
         self.emb_layer_list = nn.ModuleList(
-            [nn.Embedding(config.vocab_size, self.embed_dim) for i in range(control_num)]
+            [
+                nn.Embedding(config.vocab_size, self.embed_dim)
+                for i in range(control_num)
+            ]
         )
 
         self.drop = nn.Dropout(config.embd_pdrop)
@@ -142,6 +145,10 @@ class SongModel(GPT2PreTrainedModel):
         return_dict = (
             return_dict if return_dict is not None else self.config.use_return_dict
         )
+        # print("input ids:", input_ids)
+        input_ids, control_id_list = self.process_func(input_ids)
+        print("input ids:", input_ids)
+        print("control ids:", control_id_list)
 
         if input_ids is not None and inputs_embeds is not None:
             raise ValueError(
@@ -159,11 +166,10 @@ class SongModel(GPT2PreTrainedModel):
             raise ValueError("You have to specify either input_ids or inputs_embeds")
 
         device = input_ids.device if input_ids is not None else inputs_embeds.device
-
         if token_type_ids is not None:
             token_type_ids = token_type_ids.view(-1, input_shape[-1])
         if position_ids is not None:
-            position_ids = position_ids.view(-1, input_shape[-1])
+            position_ids = None
 
         if past_key_values is None:
             past_length = 0
@@ -198,6 +204,7 @@ class SongModel(GPT2PreTrainedModel):
             # effectively the same as removing these entirely.
             attention_mask = attention_mask.to(dtype=self.dtype)  # fp16 compatibility
             attention_mask = (1.0 - attention_mask) * torch.finfo(self.dtype).min
+            attention_mask = None
 
         # If a 2D or 3D attention mask is provided for the cross-attention
         # we need to make broadcastable to [batch_size, num_heads, seq_length, seq_length]
@@ -221,18 +228,17 @@ class SongModel(GPT2PreTrainedModel):
         head_mask = self.get_head_mask(head_mask, self.config.n_layer)
 
         # generate control ids
-        sentence_ids, control_id_list = self.process_func(input_ids)
 
         # generate sentence emb
         if inputs_embeds is None:
-            inputs_embeds = self.wte(sentence_ids)
+            inputs_embeds = self.wte(input_ids)
 
+        # print("input embeds:", inputs_embeds, inputs_embeds.shape)
         # generate position and control emb
         hidden_states = inputs_embeds + self.wpe(position_ids)
         for i in range(len(control_id_list)):
             control_embeds = self.emb_layer_list[i](control_id_list[i])
             hidden_states = hidden_states + control_embeds
-
 
         if token_type_ids is not None:
             token_type_embeds = self.wte(token_type_ids)
@@ -351,7 +357,7 @@ class SongModel(GPT2PreTrainedModel):
 
 
 class SongLMConfig:
-    def __init__(config, info_num):
+    def __init__(self, config, info_num):
         self.config = config
         self.info_num = info_num
 
@@ -359,10 +365,12 @@ class SongLMConfig:
 class SongLMHeadModel(GPT2PreTrainedModel):
     _tied_weights_keys = ["lm_head.weight"]
 
-    def __init__(self, config):
+    def __init__(self, config, control_num, process_func):
         super().__init__(config.config)
-        self.transformer = SongModel(config.config)
-        self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
+        self.transformer = SongModel(config.config, control_num, process_func)
+        self.lm_head = nn.Linear(
+            config.config.n_embd, config.config.vocab_size, bias=False
+        )
 
         # Model parallel
         self.model_parallel = False
@@ -372,7 +380,7 @@ class SongLMHeadModel(GPT2PreTrainedModel):
         self.post_init()
 
         # set config
-        self.info_num = info_num
+        self.control_num = control_num
 
     def parallelize(self, device_map=None):
         warnings.warn(
@@ -475,13 +483,6 @@ class SongLMHeadModel(GPT2PreTrainedModel):
             return_dict if return_dict is not None else self.config.use_return_dict
         )
 
-        # handel input
-        sentence_ids = input_ids
-        info_list = []
-        for i in range(self.info_num):
-            info_ids = input_ids
-            info_list.append(info_ids)
-
         transformer_outputs = self.transformer(
             input_ids,
             past_key_values=past_key_values,
@@ -548,10 +549,3 @@ class SongLMHeadModel(GPT2PreTrainedModel):
             )
             for layer_past in past_key_values
         )
-
-from transformers import GPT2Config
-model = SongModel(GPT2Config(), 3, lambda x:(x, [x, x, x]))
-inputs = torch.tensor([[1, 1, 1, 1], [1, 1, 1, 1]], dtype = torch.long)
-outputs = model(inputs)
-print(model.emb_layer_list)
-# print(outputs)
