@@ -12,6 +12,11 @@ from torch import nn
 from torch.cuda.amp import autocast
 from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
 
+from transformers import AutoTokenizer
+
+tokenizer = AutoTokenizer.from_pretrained(
+    "/home/wangsitu/format_new/bpe_gpt2_tokenizer"
+)
 
 from transformers.modeling_outputs import (
     BaseModelOutputWithPastAndCrossAttentions,
@@ -21,13 +26,15 @@ from transformers.modeling_outputs import (
     TokenClassifierOutput,
 )
 
+# torch.set_printoptions(profile="full")
+
 
 class SongModel(GPT2PreTrainedModel):
     def __init__(self, config, control_num, process_func):
         super().__init__(config)
 
         self.embed_dim = config.hidden_size
-
+        self.max_length = config.max_length
         self.wte = nn.Embedding(config.vocab_size, self.embed_dim)
         self.wpe = nn.Embedding(config.max_position_embeddings, self.embed_dim)
 
@@ -50,7 +57,7 @@ class SongModel(GPT2PreTrainedModel):
         self.gradient_checkpointing = False
 
         self.process_func = process_func
-
+        # self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         # Initialize weights and apply final processing
         self.post_init()
 
@@ -146,9 +153,17 @@ class SongModel(GPT2PreTrainedModel):
             return_dict if return_dict is not None else self.config.use_return_dict
         )
         # print("input ids:", input_ids)
-        input_ids, control_id_list = self.process_func(input_ids)
-        print("input ids:", input_ids)
-        print("control ids:", control_id_list)
+        device = input_ids.device if input_ids is not None else inputs_embeds.device
+        input_ids, control_id_list = self.process_func(
+            input_ids, self.max_length, device
+        )
+        # print("input", tokenizer.decode(input_ids[0]))
+        # print("------shapes------")
+        # print(input_ids.shape)
+        # for ctl in control_id_list:
+        #     print(ctl.shape)
+        # print("input ids:", input_ids)
+        # print("control ids:", control_id_list)
 
         if input_ids is not None and inputs_embeds is not None:
             raise ValueError(
@@ -165,7 +180,6 @@ class SongModel(GPT2PreTrainedModel):
         else:
             raise ValueError("You have to specify either input_ids or inputs_embeds")
 
-        device = input_ids.device if input_ids is not None else inputs_embeds.device
         if token_type_ids is not None:
             token_type_ids = token_type_ids.view(-1, input_shape[-1])
         if position_ids is not None:
@@ -186,6 +200,10 @@ class SongModel(GPT2PreTrainedModel):
             position_ids = position_ids.unsqueeze(0).view(-1, input_shape[-1])
 
         # GPT2Attention mask.
+        attention_mask = torch.minimum(
+            torch.ones(input_ids.size()).to(device), input_ids
+        )
+        # print("attention mask:", attention_mask.size())
         if attention_mask is not None:
             if batch_size <= 0:
                 raise ValueError("batch_size has to be defined and > 0")
@@ -204,7 +222,7 @@ class SongModel(GPT2PreTrainedModel):
             # effectively the same as removing these entirely.
             attention_mask = attention_mask.to(dtype=self.dtype)  # fp16 compatibility
             attention_mask = (1.0 - attention_mask) * torch.finfo(self.dtype).min
-            attention_mask = None
+            # attention_mask = None
 
         # If a 2D or 3D attention mask is provided for the cross-attention
         # we need to make broadcastable to [batch_size, num_heads, seq_length, seq_length]
@@ -228,15 +246,17 @@ class SongModel(GPT2PreTrainedModel):
         head_mask = self.get_head_mask(head_mask, self.config.n_layer)
 
         # generate control ids
-
+        # print("inputs:", tokenizer.decode(input_ids[0]))
         # generate sentence emb
         if inputs_embeds is None:
             inputs_embeds = self.wte(input_ids)
 
         # print("input embeds:", inputs_embeds, inputs_embeds.shape)
         # generate position and control emb
+        # print("position id", position_ids)
         hidden_states = inputs_embeds + self.wpe(position_ids)
         for i in range(len(control_id_list)):
+            # print("control", control_id_list[i])
             control_embeds = self.emb_layer_list[i](control_id_list[i])
             hidden_states = hidden_states + control_embeds
 
@@ -356,21 +376,14 @@ class SongModel(GPT2PreTrainedModel):
         )
 
 
-class SongLMConfig:
-    def __init__(self, config, info_num):
-        self.config = config
-        self.info_num = info_num
-
-
 class SongLMHeadModel(GPT2PreTrainedModel):
     _tied_weights_keys = ["lm_head.weight"]
 
     def __init__(self, config, control_num, process_func):
-        super().__init__(config.config)
-        self.transformer = SongModel(config.config, control_num, process_func)
-        self.lm_head = nn.Linear(
-            config.config.n_embd, config.config.vocab_size, bias=False
-        )
+        super().__init__(config)
+        self.transformer = SongModel(config, control_num, process_func)
+        self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
+        self.process_func = process_func
 
         # Model parallel
         self.model_parallel = False
@@ -508,12 +521,17 @@ class SongLMHeadModel(GPT2PreTrainedModel):
         lm_logits = self.lm_head(hidden_states)
 
         loss = None
+
+        # print("label", tokenizer.decode(labels[0]))
         if labels is not None:
+            labels, _ = self.process_func(labels, 1024, self.lm_head.weight.device)
             # move labels to correct device to enable model parallelism
             labels = labels.to(lm_logits.device)
             # Shift so that tokens < n predict n
             shift_logits = lm_logits[..., :-1, :].contiguous()
             shift_labels = labels[..., 1:].contiguous()
+            print("label", tokenizer.decode(shift_labels[0]))
+
             # Flatten the tokens
             loss_fct = CrossEntropyLoss()
             loss = loss_fct(
