@@ -5,9 +5,7 @@ import re
 import os
 
 
-tokenizer = AutoTokenizer.from_pretrained(
-    "/home/wangsitu/format_new/bpe_gpt2_tokenizer"
-)
+tokenizer = AutoTokenizer.from_pretrained("/home/wangsitu/format_new/gpt2_tokenizer")
 
 
 def generate_string(inputs):

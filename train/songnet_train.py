@@ -11,14 +11,17 @@ from tqdm import tqdm
 import json
 
 
-tokenizer = AutoTokenizer.from_pretrained("./../bpe_gpt2_tokenizer")
+tokenizer = AutoTokenizer.from_pretrained("./../gpt2_tokenizer")
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # device = torch.device("cpu")
 config = GPT2Config(
     max_length=1024, vocab_size=50100, max_position_embeddings=1024, pad_token_id=0
 )
 
-model = SongLMHeadModel(config, 3, process_func).to(device)
+model = SongLMHeadModel.from_pretrained(
+    "./../result/gpt2_origin", control_num=3, process_func=process_func
+).to(device)
+
 
 tokenizer.add_special_tokens({"pad_token": "[UNK]"})
 ids = tokenizer.encode(

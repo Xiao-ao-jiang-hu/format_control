@@ -4,7 +4,7 @@ from copy import deepcopy
 from models.SongnetPlus import SongLMHeadModel
 from utils.songplus_utils import generate_string, process_func
 
-tokenizer = AutoTokenizer.from_pretrained("bpe_gpt2_tokenizer")
+tokenizer = AutoTokenizer.from_pretrained("./gpt2_tokenizer")
 tokenizer.add_special_tokens({"pad_token": "[PAD]"})
 text = "12$12$4$12%1$1$2$2%11$11$11$10%今天开始我要自己上厕所$爸爸妈妈你们不要小看我$宝宝巴士教我上厕所秘诀$我等不急了我要上厕所"
 ids = tokenizer.encode(
@@ -24,7 +24,7 @@ gpt_config = GPT2Config()
 # print(out.logits)
 
 model = SongLMHeadModel.from_pretrained(
-    "/data22/private/wangsitu/model_params/result/songnet_pad/checkpoint1000",
+    "result/gpt2_origin",
     process_func=process_func,
     control_num=3,
 ).cpu()
