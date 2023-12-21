@@ -8,6 +8,52 @@ import os
 tokenizer = AutoTokenizer.from_pretrained("/home/wangsitu/format_new/gpt2_tokenizer")
 
 
+def generate_string_single(inputs):
+    res_list = [[], []]
+    for i in inputs:
+        res_list[0].append(i[0])
+        res_list[1].append(len(i[0]))
+    res = ""
+    for i in res_list[1]:
+        res += str(i) + "$"
+    res = res[:-1] + "%"
+    for i in res_list[0]:
+        res += str(i) + "$"
+
+    return res[:-1]
+
+
+def process_single(input_ids, max_length=1024, device="cpu"):
+    batch_size = input_ids.shape[0]
+    ids_list = input_ids.cpu().tolist()
+    embs_list = []
+    sentence_res = []
+    for i in range(batch_size):
+        ids = ids_list[i]
+        if ids[0] == 101:
+            ids = ids[1:]
+        while ids[-1] == 0 or ids[-1] == 102:
+            ids = ids[:-1]
+        text = tokenizer.decode(ids)
+        # print("text", text)
+        lists = text.replace(" ", "").split("%")
+        lens = lists[0].split("$")
+        len_emb = []
+        for sen_len in lens:
+            for i in range(int(sen_len)):
+                len_emb.append(int(sen_len) - i)
+            len_emb.append(0)
+        embs_list.append(len_emb[:-1] + [0] * (max_length - len(len_emb) + 1))
+        # assert len(embs_list[0]) == max_length
+        sentence_res.append(
+            tokenizer.encode(lists[1])[:-1] + [0] * (max_length - len(len_emb) + 1)
+        )
+    print(embs_list, sentence_res)
+    return torch.tensor(sentence_res, dtype=torch.long).to(device), [
+        torch.tensor(embs_list, dtype=torch.long).to(device)
+    ]
+
+
 def generate_string(inputs):
     """
     [[sentece, yun], ...]
@@ -108,3 +154,12 @@ def process_func(input_ids, max_length, device):
     res_emb = [torch.tensor(i, dtype=torch.long).to(device) for i in embs_list]
     # print(torch.tensor(sentence_res, dtype=torch.long), res_emb)
     return torch.tensor(sentence_res, dtype=torch.long).to(device), res_emb
+
+
+if __name__ == "__main__":
+    import torch
+
+    print(tokenizer.encode("[PAD]"))
+    text = generate_string_single([["今天开始我要自己上厕所", 1], ["爸爸妈妈你们不要小看我", 1]])
+    ids = torch.tensor([tokenizer.encode(text)], dtype=torch.long)
+    print(process_single(ids))
