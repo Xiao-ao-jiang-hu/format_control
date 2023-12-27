@@ -43,12 +43,12 @@ def process_single(input_ids, max_length=1024, device="cpu"):
             for i in range(int(sen_len)):
                 len_emb.append(int(sen_len) - i)
             len_emb.append(0)
-        embs_list.append(len_emb[:-1] + [0] * (max_length - len(len_emb) + 1))
-        # assert len(embs_list[0]) == max_length
-        sentence_res.append(
-            tokenizer.encode(lists[1])[:-1] + [0] * (max_length - len(len_emb) + 1)
+        embs_list.append(
+            (len_emb[:-1] + [0] * (max_length - len(len_emb) + 1))[:max_length]
         )
-    print(embs_list, sentence_res)
+        sen_emb = tokenizer.encode(lists[1])[:-1]
+        sentence_res.append(sen_emb[:-1] + [0] * (max_length - len(sen_emb) + 1))
+        # print(len(embs_list[-1]), len(sentence_res[-1]))
     return torch.tensor(sentence_res, dtype=torch.long).to(device), [
         torch.tensor(embs_list, dtype=torch.long).to(device)
     ]
@@ -160,6 +160,18 @@ if __name__ == "__main__":
     import torch
 
     print(tokenizer.encode("[PAD]"))
-    text = generate_string_single([["今天开始我要自己上厕所", 1], ["爸爸妈妈你们不要小看我", 1]])
-    ids = torch.tensor([tokenizer.encode(text)], dtype=torch.long)
-    print(process_single(ids))
+    text1 = generate_string_single([["今天开始我要自己上厕所", 1], ["爸爸妈妈你们不要小看我", 1]])
+    text2 = generate_string_single([["我是你爹", 1], ["你爹是我", 1]])
+    ids = torch.tensor(
+        [
+            tokenizer.encode(text1, max_length=1024, padding="max_length"),
+            tokenizer.encode(
+                text2,
+                max_length=1024,
+                padding="max_length",
+            ),
+        ],
+        dtype=torch.long,
+    )
+    sentence, embs = process_single(ids)
+    print(sentence.shape, embs[0].shape)

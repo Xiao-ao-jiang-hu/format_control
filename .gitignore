@@ -3,3 +3,4 @@ bpe_gpt2_tokenizer/
 src/
 result/
 gpt2_tokenizer/
+__pycache__/

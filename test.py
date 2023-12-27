@@ -2,7 +2,7 @@ import torch
 from transformers import AutoTokenizer, GPT2Config
 from copy import deepcopy
 from models.SongnetPlus import SongLMHeadModel
-from utils.songplus_utils import generate_string, process_func
+from utils.songplus_utils import generate_string_single, process_single
 
 tokenizer = AutoTokenizer.from_pretrained("./gpt2_tokenizer")
 tokenizer.add_special_tokens({"pad_token": "[PAD]"})
@@ -24,10 +24,16 @@ gpt_config = GPT2Config()
 # print(out.logits)
 
 model = SongLMHeadModel.from_pretrained(
-    "result/gpt2_origin",
-    process_func=process_func,
-    control_num=3,
+    "/data22/private/wangsitu/model_params/origin_pre/checkpoint150000",
+    process_func=process_single,
+    control_num=1,
 ).cpu()
+
+# model = SongLMHeadModel.from_pretrained(
+#     "result/gpt2_origin",
+#     process_func=process_single,
+#     control_num=1,
+# ).cpu()
 # model = SongLMHeadModel(gpt_config, 3, process_func)
 if tokenizer.pad_token is None:
     tokenizer.pad_token = torch.tensor([0], dtype=torch.long)
@@ -38,7 +44,7 @@ with torch.no_grad():
     ## 一个简单 topp 的设定
     output_tokens = model.generate(
         inputs=torch.tensor(
-            [tokenizer.encode("12$12$4$12%1$1$2$2%11$11$11$10%今天开始我")[:-1]],
+            [tokenizer.encode("11$11$11$10%今天开始我")[:-1]],
             dtype=torch.long,
         ),
         early_stopping=True,

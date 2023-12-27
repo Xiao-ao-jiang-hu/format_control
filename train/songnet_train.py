@@ -6,7 +6,7 @@ import sys
 
 sys.path.append("/home/wangsitu/format_new")
 from models.SongnetPlus import SongLMHeadModel
-from utils.songplus_utils import generate_string, process_func
+from utils.songplus_utils import generate_string_single, process_single
 from tqdm import tqdm
 import json
 
@@ -19,11 +19,11 @@ config = GPT2Config(
 )
 
 model = SongLMHeadModel.from_pretrained(
-    "./../result/gpt2_origin", control_num=3, process_func=process_func
+    "./../result/gpt2_origin", control_num=1, process_func=process_single
 ).to(device)
 
 
-tokenizer.add_special_tokens({"pad_token": "[UNK]"})
+tokenizer.add_special_tokens({"pad_token": "[PAD]"})
 ids = tokenizer.encode(
     "今天开始我要自己上厕所，爸爸妈妈你们不要小看我，宝宝巴士教我上厕所秘诀，我等不急了我要上厕所。",
     max_length=1024,
@@ -39,21 +39,21 @@ from tqdm import tqdm
 print("load dataset")
 import os
 
-tokenizer.add_special_tokens({"pad_token": "[UNK]"})
+tokenizer.add_special_tokens({"pad_token": "[PAD]"})
 classes_path = os.path.expanduser("/home/wangsitu/pinyin/outputs/lyric_test_res")
 data_ids = []
-for i in range(1, 2):
+for i in range(1, 20):
     with open(classes_path + str(i) + ".jsonl", "r", encoding="UTF-8") as f:
         for line in tqdm(f):
             data_ids.append(
                 tokenizer.encode(
-                    generate_string(json.loads(line)["lyric"]),
+                    generate_string_single(json.loads(line)["lyric"]),
                     max_length=1024,
                     padding="max_length",
                     add_special_tokens=True,
                 )[:1024]
             )
-            # print(data_ids[-1])
+            # print(len(data_ids[-1]))
 
 
 dataset_tensor = torch.tensor(data_ids).to(device)
@@ -80,36 +80,40 @@ epoch = 20
 
 model.train()
 print("start_train")
-optimizer = torch.optim.Adam(model.parameters(), lr=3e-5)  # 定义优化器
+optimizer = torch.optim.Adam(model.parameters(), lr=5e-6)  # 定义优化器
 
 cnt = 1
 for i in range(epoch):
     total_loss = 0
     for batch_idx, (data, target) in enumerate(tqdm(train_loader)):
-        data, target = Variable(data).to(device), Variable(target).to(device)
+        try:
+            data, target = Variable(data).to(device), Variable(target).to(device)
 
-        optimizer.zero_grad()
+            optimizer.zero_grad()
 
-        loss = model(
-            data,
-            labels=target,
-        ).loss
-        # logits = model(data, labels=target).logits
-        total_loss += loss
-        if cnt % 1000 == 0:
-            print(loss.data)
+            loss = model(
+                data,
+                labels=target,
+            ).loss
+            # logits = model(data, labels=target).logits
+            total_loss += loss
+            if cnt % 1000 == 0:
+                print(loss.data)
 
-        loss.backward()
-        optimizer.step()
-        cnt += 1
+            loss.backward()
+            optimizer.step()
+            cnt += 1
+        except KeyboardInterrupt:
+            break
+        except Exception as e:
+            print(e)
         if batch_idx == len(train_loader) - 1:
             # 在每个 Epoch 的最后输出一下结果
             print("average loss:", total_loss / len(train_loader))
 
         if cnt % 1000 == 0:
             model.save_pretrained(
-                "/data22/private/wangsitu/model_params/result/songnet_pad/checkpoint"
-                + str(cnt)
+                "/data22/private/wangsitu/model_params/origin_pre/checkpoint" + str(cnt)
             )
             print(
                 "------ saving to "
@@ -119,4 +123,4 @@ for i in range(epoch):
             )
 
 print("训练时间：", time.time() - pre)
-model.save_pretrained("/data22/private/wangsitu/model_params/songnet_pad/final")
+model.save_pretrained("/data22/private/wangsitu/model_params/origin_pre/final")

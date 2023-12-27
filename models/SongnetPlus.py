@@ -14,9 +14,7 @@ from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
 
 from transformers import AutoTokenizer
 
-tokenizer = AutoTokenizer.from_pretrained(
-    "/home/wangsitu/format_new/bpe_gpt2_tokenizer"
-)
+tokenizer = AutoTokenizer.from_pretrained("/home/wangsitu/format_new/gpt2_tokenizer")
 
 from transformers.modeling_outputs import (
     BaseModelOutputWithPastAndCrossAttentions,
@@ -154,9 +152,7 @@ class SongModel(GPT2PreTrainedModel):
         )
         # print("input ids:", input_ids)
         device = input_ids.device if input_ids is not None else inputs_embeds.device
-        input_ids, control_id_list = self.process_func(
-            input_ids, self.max_length, device
-        )
+        input_ids, control_id_list = self.process_func(input_ids, 1024, device)
         # print("input", tokenizer.decode(input_ids[0]))
         # print("------shapes------")
         # print(input_ids.shape)
@@ -170,7 +166,7 @@ class SongModel(GPT2PreTrainedModel):
                 "You cannot specify both input_ids and inputs_embeds at the same time"
             )
         elif input_ids is not None:
-            self.warn_if_padding_and_no_attention_mask(input_ids, attention_mask)
+            # self.warn_if_padding_and_no_attention_mask(input_ids, attention_mask)
             input_shape = input_ids.size()
             input_ids = input_ids.view(-1, input_shape[-1])
             batch_size = input_ids.shape[0]
@@ -251,12 +247,12 @@ class SongModel(GPT2PreTrainedModel):
         if inputs_embeds is None:
             inputs_embeds = self.wte(input_ids)
 
-        # print("input embeds:", inputs_embeds, inputs_embeds.shape)
+        print("input embeds:", inputs_embeds, inputs_embeds.shape)
         # generate position and control emb
         # print("position id", position_ids)
         hidden_states = inputs_embeds + self.wpe(position_ids)
         for i in range(len(control_id_list)):
-            # print("control", control_id_list[i])
+            print("control", control_id_list[i])
             control_embeds = self.emb_layer_list[i](control_id_list[i])
             hidden_states = hidden_states + control_embeds
 
@@ -530,7 +526,7 @@ class SongLMHeadModel(GPT2PreTrainedModel):
             # Shift so that tokens < n predict n
             shift_logits = lm_logits[..., :-1, :].contiguous()
             shift_labels = labels[..., 1:].contiguous()
-            print("label", tokenizer.decode(shift_labels[0]))
+            # print("label", tokenizer.decode(shift_labels[0]))
 
             # Flatten the tokens
             loss_fct = CrossEntropyLoss()
